@@ -1,0 +1,21 @@
+{
+    "name": "SmartDo: AI Task Manager",
+    "short_name": "SmartDo",
+    "description": "Smart, AI-powered task management.",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#f8fafc",
+    "theme_color": "#6366f1",
+    "icons": [
+        {
+            "src": "https://cdn-icons-png.flaticon.com/512/9329/9329383.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "https://cdn-icons-png.flaticon.com/512/9329/9329383.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}

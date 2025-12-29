@@ -1,6 +1,5 @@
-import React, { useState, useEffect, ClipboardEvent, useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
-import { X, Image as ImageIcon, Eye, Edit2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Image as ImageIcon, Calendar, CalendarClock } from 'lucide-react';
 import { Todo } from '../types';
 
 interface TaskDetailsModalProps {
@@ -13,51 +12,56 @@ interface TaskDetailsModalProps {
 export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ todo, isOpen, onClose, onUpdate }) => {
   const [description, setDescription] = useState('');
   const [localImages, setLocalImages] = useState<Record<string, string>>({});
-  const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
+  const [startDate, setStartDate] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const editorRef = useRef<HTMLDivElement>(null);
+  const lastTodoIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (todo) {
-      setDescription(todo.description || '');
-      setLocalImages(todo.images || {});
-    }
-  }, [todo]);
+  // Convert description to HTML for display with inline images
+  const descriptionToHtml = (desc: string, images: Record<string, string>) => {
+    if (!desc) return '';
+    let html = desc
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\n/g, '<br>');
 
-  // Initial view mode based on screen size (run once when opening)
-  useEffect(() => {
-    if (isOpen) {
-        if (window.innerWidth >= 768) {
-            setViewMode('split');
-        } else {
-            setViewMode('write');
-        }
-    }
-  }, [isOpen]);
-
-  // Handle window resize for responsive layout
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth >= 768) {
-        if (viewMode !== 'split') setViewMode('split');
-      } else {
-        if (viewMode === 'split') setViewMode('write');
-      }
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [viewMode]);
-
-  // Pre-process markdown to replace image:UUID with actual Base64 for rendering
-  // MOVED UP before the conditional return to avoid "Rendered fewer hooks than expected" error
-  const renderedMarkdown = useMemo(() => {
-    if (!description) return '';
-    return description.replace(/!\[(.*?)\]\(image:([a-zA-Z0-9-]+)\)/g, (match, alt, id) => {
-      const base64 = localImages[id];
+    html = html.replace(/!\[(.*?)\]\(image:([a-zA-Z0-9-]+)\)/g, (match, alt, id) => {
+      const base64 = images[id];
       if (base64) {
-        return `![${alt}](${base64})`;
+        return `<img src="${base64}" alt="${alt}" class="inline-block max-w-full rounded-lg shadow-md my-2" style="max-height: 300px; object-fit: contain;" data-image-id="${id}" />`;
       }
       return match;
     });
-  }, [description, localImages]);
+
+    return html;
+  };
+
+  // Initialize editor content when todo changes (not on every description change)
+  useEffect(() => {
+    if (todo && todo.id !== lastTodoIdRef.current) {
+      lastTodoIdRef.current = todo.id;
+      setDescription(todo.description || '');
+      setLocalImages(todo.images || {});
+      setStartDate(todo.startDate || '');
+      setDueDate(todo.dueDate || '');
+
+      // Set editor HTML only when switching to a new todo
+      if (editorRef.current) {
+        editorRef.current.innerHTML = descriptionToHtml(todo.description || '', todo.images || {});
+      }
+    }
+  }, [todo]);
+
+  // Also set editor content after ref is available (on first render)
+  useEffect(() => {
+    if (editorRef.current && todo && lastTodoIdRef.current === todo.id) {
+      const currentHtml = editorRef.current.innerHTML;
+      if (currentHtml === '' && todo.description) {
+        editorRef.current.innerHTML = descriptionToHtml(todo.description, todo.images || {});
+      }
+    }
+  });
 
   if (!isOpen || !todo) return null;
 
@@ -65,50 +69,115 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ todo, isOpen
     onUpdate(todo.id, { description, images: localImages });
   };
 
-  const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+  const handleDateChange = (type: 'start' | 'due', value: string) => {
+    if (type === 'start') {
+      setStartDate(value);
+      onUpdate(todo.id, { startDate: value || undefined });
+    } else {
+      setDueDate(value);
+      onUpdate(todo.id, { dueDate: value || undefined });
+    }
+  };
+
+  // Extract text content from editor, preserving image markdown
+  const extractTextFromEditor = (element: HTMLElement): string => {
+    let result = '';
+    element.childNodes.forEach(node => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        result += node.textContent;
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        if (el.tagName === 'BR') {
+          result += '\n';
+        } else if (el.tagName === 'IMG') {
+          const imageId = el.getAttribute('data-image-id');
+          const alt = el.getAttribute('alt') || 'Pasted Image';
+          if (imageId) {
+            result += `![${alt}](image:${imageId})`;
+          }
+        } else if (el.tagName === 'DIV' || el.tagName === 'P') {
+          // Handle div/p elements that browsers insert for line breaks
+          const innerText = extractTextFromEditor(el);
+          if (result && !result.endsWith('\n')) {
+            result += '\n';
+          }
+          result += innerText;
+        } else {
+          result += extractTextFromEditor(el);
+        }
+      }
+    });
+    return result;
+  };
+
+  const handleEditorInput = () => {
+    if (editorRef.current) {
+      const newDescription = extractTextFromEditor(editorRef.current);
+      setDescription(newDescription);
+    }
+  };
+
+  const handleEditorPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     const items = e.clipboardData.items;
-    const textarea = e.currentTarget; // Capture synchronously
 
     for (const item of items) {
       if (item.type.indexOf('image') !== -1) {
         e.preventDefault();
         const blob = item.getAsFile();
         if (blob) {
-          // Capture selection state synchronously
-          const start = textarea.selectionStart;
-          const end = textarea.selectionEnd;
-
           const reader = new FileReader();
           reader.onload = (event) => {
             const base64 = event.target?.result as string;
             const imageId = crypto.randomUUID();
-            
-            // Use functional updates to ensure we work with latest state and avoid stale closures
+
+            // Insert image at cursor position
+            const selection = window.getSelection();
+            if (selection && selection.rangeCount > 0) {
+              const range = selection.getRangeAt(0);
+              range.deleteContents();
+
+              const img = document.createElement('img');
+              img.src = base64;
+              img.alt = 'Pasted Image';
+              img.setAttribute('data-image-id', imageId);
+              img.className = 'inline-block max-w-full rounded-lg shadow-md my-2';
+              img.style.maxHeight = '300px';
+              img.style.objectFit = 'contain';
+
+              range.insertNode(img);
+              range.setStartAfter(img);
+              range.setEndAfter(img);
+              selection.removeAllRanges();
+              selection.addRange(range);
+            }
+
+            // Update state
             setLocalImages(prevImages => {
-                const newImages = { ...prevImages, [imageId]: base64 };
-                
-                setDescription(prevDesc => {
-                     const imageMarkdown = `![Pasted Image](image:${imageId})`;
-                     // Insert at the captured position
-                     const newText = prevDesc.substring(0, start) + imageMarkdown + prevDesc.substring(end);
-                     
-                     // Sync to parent immediately
-                     onUpdate(todo.id, { description: newText, images: newImages });
-                     return newText;
-                });
-                return newImages;
+              const newImages = { ...prevImages, [imageId]: base64 };
+
+              // Extract new description after image insertion
+              setTimeout(() => {
+                if (editorRef.current) {
+                  const newDescription = extractTextFromEditor(editorRef.current);
+                  setDescription(newDescription);
+                  onUpdate(todo.id, { description: newDescription, images: newImages });
+                }
+              }, 0);
+
+              return newImages;
             });
           };
           reader.readAsDataURL(blob);
         }
+        return;
       }
     }
   };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div 
-        className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col h-[85vh] overflow-hidden animate-slide-up"
+      <div
+        className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col h-[85vh] overflow-hidden animate-slide-up"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -119,69 +188,68 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ todo, isOpen
           </button>
         </div>
 
-        {/* Toolbar (Mobile Only) */}
-        <div className="flex md:hidden items-center gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100 shrink-0">
-          <button 
-            onClick={() => setViewMode('write')}
-            className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${viewMode === 'write' ? 'bg-white text-primary shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            <Edit2 className="w-3.5 h-3.5" /> Write
-          </button>
-          <button 
-            onClick={() => setViewMode('preview')}
-            className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${viewMode === 'preview' ? 'bg-white text-primary shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            <Eye className="w-3.5 h-3.5" /> Preview
-          </button>
-        </div>
-        
-        {/* Desktop Toolbar Hint */}
-        <div className="hidden md:flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-100 shrink-0 text-xs text-gray-500">
-            <div className="flex items-center gap-4">
-                <span className="flex items-center gap-1.5 font-medium text-gray-700">
-                    <Edit2 className="w-3.5 h-3.5" /> Editor
-                </span>
-                <span className="flex items-center gap-1.5 font-medium text-gray-700">
-                    <Eye className="w-3.5 h-3.5" /> Live Preview
-                </span>
-            </div>
-            <div className="flex items-center gap-1">
-                 <ImageIcon className="w-3 h-3" /> 
-                 Paste images directly (Ctrl+V)
-            </div>
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-hidden relative flex flex-row">
-            
-            {/* Editor Pane */}
-            <div className={`flex-1 flex flex-col h-full ${viewMode === 'preview' ? 'hidden' : 'flex'}`}>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  onBlur={handleBlur}
-                  onPaste={handlePaste}
-                  className="w-full h-full p-6 resize-none focus:outline-none text-gray-700 leading-relaxed font-mono text-sm bg-transparent border-r border-gray-100"
-                  placeholder="Add notes... Paste images to attach them."
-                  autoFocus
+        {/* Toolbar with Dates */}
+        <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100 shrink-0 flex-wrap gap-2">
+          {/* Date Inputs */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-medium">开始:</span>
+              <div className="relative flex items-center">
+                <CalendarClock className="w-4 h-4 text-blue-400 absolute left-2 pointer-events-none" />
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => handleDateChange('start', e.target.value)}
+                  className="pl-8 pr-2 py-1.5 text-xs border rounded-lg text-gray-600 focus:ring-1 focus:ring-primary focus:border-primary outline-none bg-white"
                 />
+              </div>
             </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-medium">截止:</span>
+              <div className="relative flex items-center">
+                <Calendar className="w-4 h-4 text-gray-400 absolute left-2 pointer-events-none" />
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => handleDateChange('due', e.target.value)}
+                  className="pl-8 pr-2 py-1.5 text-xs border rounded-lg text-gray-600 focus:ring-1 focus:ring-primary focus:border-primary outline-none bg-white"
+                />
+              </div>
+            </div>
+          </div>
 
-            {/* Preview Pane */}
-            <div className={`flex-1 h-full bg-gray-50/30 overflow-y-auto ${viewMode === 'write' ? 'hidden' : 'block'}`}>
-                <div className="prose prose-sm prose-indigo max-w-none p-6 [&_img]:rounded-lg [&_img]:shadow-md [&_img]:max-w-full [&_a]:text-blue-600 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5">
-                   {renderedMarkdown ? (
-                      <ReactMarkdown>{renderedMarkdown}</ReactMarkdown>
-                   ) : (
-                      <div className="flex flex-col items-center justify-center h-40 text-gray-400 gap-2">
-                          <Eye className="w-8 h-8 opacity-20" />
-                          <p className="text-sm">Preview will appear here</p>
-                      </div>
-                   )}
-                </div>
-            </div>
+          {/* Paste hint */}
+          <div className="flex items-center gap-1 text-xs text-gray-500">
+            <ImageIcon className="w-3 h-3" />
+            Paste images (Ctrl+V)
+          </div>
         </div>
-        
+
+        {/* Content Area - Editor Only */}
+        <div className="flex-1 overflow-y-auto">
+          <div
+            ref={editorRef}
+            contentEditable
+            onInput={handleEditorInput}
+            onBlur={handleBlur}
+            onPaste={handleEditorPaste}
+            className="w-full h-full p-6 focus:outline-none text-gray-700 leading-relaxed text-sm bg-transparent whitespace-pre-wrap"
+            style={{ minHeight: '100%' }}
+            data-placeholder="Add notes... Paste images to attach them."
+          />
+          <style>{`
+            [contenteditable]:empty:before {
+              content: attr(data-placeholder);
+              color: #9ca3af;
+              pointer-events: none;
+            }
+            [contenteditable] img {
+              display: block;
+              margin: 8px 0;
+            }
+          `}</style>
+        </div>
+
       </div>
     </div>
   );

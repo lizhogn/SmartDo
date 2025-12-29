@@ -7,10 +7,10 @@ import { GroupingTabs, GroupingType } from './components/GroupingTabs';
 import { TaskDetailsModal } from './components/TaskDetailsModal';
 import { SummaryModal } from './components/SummaryModal';
 import { SettingsModal } from './components/SettingsModal';
-import { generateSubtasks, summarizeGroupTasks } from './services/geminiService';
+import { generateSubtasks, summarizeGroupTasks, GroupingType as SummaryGroupingType } from './services/geminiService';
 import { CheckCircle2, ListTodo, AlertCircle, Calendar, Sparkles, Loader2, User } from 'lucide-react';
 
-const STORAGE_KEY = 'gemini-todo-app-v1';
+import { db } from './services/database';
 
 // Mock data generator for development/demo
 const generateMockTodos = (): Todo[] => {
@@ -30,8 +30,8 @@ const generateMockTodos = (): Todo[] => {
       id: 'mock-1',
       text: 'Prepare project documentation',
       completed: true,
-      createdAt: now - 172800000, // 2 days ago
-      dueDate: getRelativeDate(-1), // Yesterday
+      createdAt: now - 172800000,
+      dueDate: getRelativeDate(-1),
       description: 'Include the following sections:\n- Overview\n- Tech Stack\n- Installation Guide',
       order: 0,
     },
@@ -39,8 +39,8 @@ const generateMockTodos = (): Todo[] => {
       id: 'mock-2',
       text: 'Review pull requests',
       completed: false,
-      createdAt: now - 3600000, // 1 hour ago
-      dueDate: getRelativeDate(0), // Today
+      createdAt: now - 3600000,
+      dueDate: getRelativeDate(0),
       isImportant: true,
       order: 1,
     },
@@ -48,8 +48,8 @@ const generateMockTodos = (): Todo[] => {
       id: 'mock-3',
       text: 'Design system meeting',
       completed: false,
-      createdAt: now - 7200000, // 2 hours ago
-      dueDate: getRelativeDate(0), // Today
+      createdAt: now - 7200000,
+      dueDate: getRelativeDate(0),
       order: 2,
     },
     {
@@ -57,7 +57,7 @@ const generateMockTodos = (): Todo[] => {
       text: 'Optimize database queries',
       completed: false,
       createdAt: now,
-      dueDate: getRelativeDate(1), // Tomorrow
+      dueDate: getRelativeDate(1),
       isAiGenerated: true,
       order: 3,
     },
@@ -65,34 +65,20 @@ const generateMockTodos = (): Todo[] => {
       id: 'mock-5',
       text: 'Plan Q3 roadmap',
       completed: false,
-      createdAt: now - 86400000, // 1 day ago
-      dueDate: getRelativeDate(7), // Next week
+      createdAt: now - 86400000,
+      dueDate: getRelativeDate(7),
       order: 4,
     }
   ];
 };
 
 const App: React.FC = () => {
-  const [todos, setTodos] = useState<Todo[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Ensure all todos have an order field
-        return parsed.map((t: any, i: number) => ({
-          ...t,
-          order: typeof t.order === 'number' ? t.order : i
-        }));
-      } catch (e) {
-        return generateMockTodos();
-      }
-    }
-    return generateMockTodos();
-  });
+  const [todos, setTodos] = useState<Todo[]>([]);
   const [filter, setFilter] = useState<FilterType>(FilterType.ALL);
   const [grouping, setGrouping] = useState<GroupingType>('day');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // State for Modal
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null);
@@ -125,14 +111,34 @@ const App: React.FC = () => {
     loadUser();
   }, []);
 
+  // Load from DB on mount
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
-  }, [todos]);
+    const loadTodos = async () => {
+      try {
+        await db.init();
+        const savedTodos = await db.getAllTodos();
+        if (savedTodos.length > 0) {
+          setTodos(savedTodos.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
+        } else {
+          // Seed mock data if empty
+          const mocks = generateMockTodos();
+          setTodos(mocks);
+          for (const t of mocks) {
+            await db.saveTodo(t);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load todos", e);
+        setError("Failed to load data.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadTodos();
+  }, []);
 
   const addTask = (text: string, dueDate?: string, isAiGenerated = false) => {
-    // Determine new order: lowest existing order - 1 to put at top
     const minOrder = todos.length > 0 ? Math.min(...todos.map(t => t.order)) : 0;
-
     const newTodo: Todo = {
       id: crypto.randomUUID(),
       text,
@@ -142,7 +148,9 @@ const App: React.FC = () => {
       isAiGenerated,
       order: minOrder - 1,
     };
+
     setTodos((prev) => [newTodo, ...prev]);
+    db.saveTodo(newTodo).catch(e => console.error(e));
   };
 
   const handleMagicAdd = async (goal: string, dueDate?: string) => {
@@ -166,6 +174,7 @@ const App: React.FC = () => {
         })).reverse();
 
         setTodos(prev => [...newTodos, ...prev]);
+        newTodos.forEach(t => db.saveTodo(t)); // Save all generated tasks
       }
     } catch (err) {
       setError("Failed to generate tasks via AI. Added as plain task instead.");
@@ -177,24 +186,37 @@ const App: React.FC = () => {
   };
 
   const toggleTodo = (id: string) => {
+    let updatedTodo: Todo | undefined;
     setTodos((prev) =>
-      prev.map((todo) =>
-        todo.id === id ? { ...todo, completed: !todo.completed } : todo
-      )
+      prev.map((todo) => {
+        if (todo.id === id) {
+          updatedTodo = { ...todo, completed: !todo.completed };
+          return updatedTodo;
+        }
+        return todo;
+      })
     );
+    if (updatedTodo) db.saveTodo(updatedTodo);
   };
 
   const deleteTodo = (id: string) => {
     setTodos((prev) => prev.filter((todo) => todo.id !== id));
     if (selectedTodoId === id) setSelectedTodoId(null);
+    db.deleteTodo(id);
   };
 
   const updateTodo = (id: string, updates: Partial<Todo>) => {
+    let updatedTodo: Todo | undefined;
     setTodos((prev) =>
-      prev.map((todo) =>
-        todo.id === id ? { ...todo, ...updates } : todo
-      )
+      prev.map((todo) => {
+        if (todo.id === id) {
+          updatedTodo = { ...todo, ...updates };
+          return updatedTodo;
+        }
+        return todo;
+      })
     );
+    if (updatedTodo) db.saveTodo(updatedTodo);
   };
 
   const selectedTodo = useMemo(() =>
@@ -260,11 +282,42 @@ const App: React.FC = () => {
       groups[key].push(todo);
     });
 
-    const sortedKeys = Object.keys(groups).sort((a, b) => {
-      if (a === noDateKey) return 1;
-      if (b === noDateKey) return -1;
-      return a.localeCompare(b);
+    // Get today's date key for comparison
+    const today = new Date();
+    const todayYear = today.getFullYear();
+    const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
+    const todayDay = String(today.getDate()).padStart(2, '0');
+    const todayKey = `${todayYear}-${todayMonth}-${todayDay}`;
+
+    // Separate keys into categories: today, future, past, no-date
+    const allKeys = Object.keys(groups);
+    const todayKeys: string[] = [];
+    const futureKeys: string[] = [];
+    const pastKeys: string[] = [];
+    const noDateKeys: string[] = [];
+
+    allKeys.forEach(key => {
+      if (key === noDateKey) {
+        noDateKeys.push(key);
+      } else if (key === todayKey) {
+        todayKeys.push(key);
+      } else if (key > todayKey) {
+        futureKeys.push(key);
+      } else {
+        pastKeys.push(key);
+      }
     });
+
+    // Sort future dates ascending (closest first)
+    futureKeys.sort((a, b) => a.localeCompare(b));
+    // Sort past dates descending (most recent first, so scrolling up reveals older)
+    pastKeys.sort((a, b) => b.localeCompare(a));
+
+    // Final order: past (reversed for scroll-up) → today → future → no-date
+    // But we want Today at the TOP, so: today → future → past (reversed) → no-date
+    // For scroll-up to reveal past: we put past BEFORE today in DOM but use CSS/scroll to position
+    // Actually simpler: Today first, then future, then past (most recent first), then no-date
+    const sortedKeys = [...todayKeys, ...futureKeys, ...pastKeys, ...noDateKeys];
 
     return sortedKeys.map(key => {
       const tasks = groups[key];
@@ -324,7 +377,7 @@ const App: React.FC = () => {
     const title = getGroupTitle(key);
     setSummarizingKey(key);
     try {
-      const summary = await summarizeGroupTasks(title, tasks);
+      const summary = await summarizeGroupTasks(title, tasks, grouping as SummaryGroupingType);
       setSummaryResult({ title, content: summary });
     } catch (e) {
       setError("Failed to summarize tasks.");
@@ -364,6 +417,59 @@ const App: React.FC = () => {
     e.dataTransfer.dropEffect = "move";
   };
 
+  // Get the dueDate for a given group key
+  const getGroupDueDate = (key: string): string | undefined => {
+    if (key === 'no-date') return undefined;
+
+    if (grouping === 'day') {
+      return key; // Already in YYYY-MM-DD format
+    } else if (grouping === 'week') {
+      // Week key is the Monday, use that as the due date
+      return key;
+    } else if (grouping === 'month') {
+      // Month key is YYYY-MM, set to first day of month
+      return `${key}-01`;
+    } else if (grouping === 'year') {
+      // Year key is YYYY, set to first day of year
+      return `${key}-01-01`;
+    }
+    return key;
+  };
+
+  // Handle drop on group header (allows dropping to change date group)
+  const handleGroupDrop = (e: React.DragEvent, groupKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!draggedTodoId) {
+      setDraggedTodoId(null);
+      return;
+    }
+
+    const newDueDate = getGroupDueDate(groupKey);
+    const draggedTodo = todos.find(t => t.id === draggedTodoId);
+
+    if (draggedTodo) {
+      // Update the dragged task's due date to match the target group
+      // Also set order to be at the top of the target group
+      const targetGroup = groupedTodos.find(g => g.key === groupKey);
+      const minOrderInGroup = targetGroup && targetGroup.tasks.length > 0
+        ? Math.min(...targetGroup.tasks.map(t => t.order))
+        : 0;
+
+      const updatedTodo = { ...draggedTodo, dueDate: newDueDate, order: minOrderInGroup - 1 };
+
+      setTodos(prev => prev.map(t =>
+        t.id === draggedTodoId
+          ? updatedTodo
+          : t
+      ));
+      db.saveTodo(updatedTodo);
+    }
+
+    setDraggedTodoId(null);
+  };
+
   const handleDrop = (e: React.DragEvent, targetId: string) => {
     e.preventDefault();
     if (!draggedTodoId || draggedTodoId === targetId) {
@@ -373,12 +479,41 @@ const App: React.FC = () => {
 
     // Identify which group the target belongs to
     const targetGroup = groupedTodos.find(g => g.tasks.find(t => t.id === targetId));
+    const sourceGroup = groupedTodos.find(g => g.tasks.find(t => t.id === draggedTodoId));
 
     if (targetGroup) {
-      // Ensure dragged item is in the same visual group (optional, but good for UX stability)
-      const isDraggedInSameGroup = targetGroup.tasks.find(t => t.id === draggedTodoId);
+      // Check if dragging across groups
+      const isCrossGroupDrag = !sourceGroup || sourceGroup.key !== targetGroup.key;
 
-      if (isDraggedInSameGroup) {
+      if (isCrossGroupDrag) {
+        // Cross-group drag: update dueDate and position
+        const newDueDate = getGroupDueDate(targetGroup.key);
+        const targetTaskIndex = targetGroup.tasks.findIndex(t => t.id === targetId);
+
+        // Calculate new order to insert at target position
+        let newOrder: number;
+        if (targetTaskIndex === 0) {
+          // Insert before first item
+          newOrder = targetGroup.tasks[0].order - 1;
+        } else {
+          // Insert at target position
+          const prevOrder = targetGroup.tasks[targetTaskIndex - 1].order;
+          const currentOrder = targetGroup.tasks[targetTaskIndex].order;
+          newOrder = (prevOrder + currentOrder) / 2;
+        }
+
+        const draggedTodo = todos.find(t => t.id === draggedTodoId);
+        if (draggedTodo) {
+          const updatedTodo = { ...draggedTodo, dueDate: newDueDate, order: newOrder };
+          setTodos(prev => prev.map(t =>
+            t.id === draggedTodoId
+              ? updatedTodo
+              : t
+          ));
+          db.saveTodo(updatedTodo);
+        }
+      } else {
+        // Same group drag: just reorder
         const taskIds = targetGroup.tasks.map(t => t.id);
         const fromIndex = taskIds.indexOf(draggedTodoId);
         const toIndex = taskIds.indexOf(targetId);
@@ -388,17 +523,6 @@ const App: React.FC = () => {
           const newTasks = [...targetGroup.tasks];
           const [movedItem] = newTasks.splice(fromIndex, 1);
           newTasks.splice(toIndex, 0, movedItem);
-
-          // Update orders in the main todos list
-          // We create a map of id -> newOrder
-          // Note: we can't just use index because other groups exist.
-          // We need to swap the 'order' values of the affected items, or re-assign.
-          // To support global stability, we can just assign new orders based on position.
-          // But we must respect the fact that `filteredTodos` might not be ALL todos.
-          // Simpler approach: 
-          // 1. Get all todos.
-          // 2. Find the items involved in the move.
-          // 3. Just swap them if adjacent? No, drag drop can be anywhere.
 
           // Robust approach:
           // Extract all valid 'order' values from the current group.
@@ -411,7 +535,13 @@ const App: React.FC = () => {
 
           setTodos(prev => prev.map(t => {
             const update = updates.find(u => u.id === t.id);
-            return update ? { ...t, order: update.order } : t;
+            if (update) {
+              // Side effect in map is bad but we will save later
+              const updated = { ...t, order: update.order };
+              db.saveTodo(updated); // Async save
+              return updated;
+            }
+            return t;
           }));
         }
       }
@@ -440,8 +570,8 @@ const App: React.FC = () => {
           <button
             onClick={() => setIsSettingsOpen(true)}
             className={`rounded-full transition-all duration-200 ${currentUser
-                ? 'p-0.5 border-2 border-primary hover:scale-105'
-                : 'p-2.5 bg-white shadow-sm border border-gray-100 hover:shadow-md hover:bg-gray-50 text-gray-600 hover:text-primary'
+              ? 'p-0.5 border-2 border-primary hover:scale-105'
+              : 'p-2.5 bg-white shadow-sm border border-gray-100 hover:shadow-md hover:bg-gray-50 text-gray-600 hover:text-primary'
               }`}
             title={currentUser ? currentUser.name : "Settings & Login"}
           >
@@ -485,7 +615,20 @@ const App: React.FC = () => {
           ) : (
             groupedTodos.map(({ key, tasks }) => (
               <div key={key} className="mb-6 animate-fade-in">
-                <div className="flex items-center justify-between mb-2 px-1 mt-4">
+                <div
+                  className="flex items-center justify-between mb-2 px-1 mt-4 rounded-lg transition-colors"
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.add('bg-primary/10');
+                  }}
+                  onDragLeave={(e) => {
+                    e.currentTarget.classList.remove('bg-primary/10');
+                  }}
+                  onDrop={(e) => {
+                    e.currentTarget.classList.remove('bg-primary/10');
+                    handleGroupDrop(e, key);
+                  }}
+                >
                   <div className="flex items-center gap-2 text-sm font-semibold text-gray-500">
                     <Calendar className="w-4 h-4" />
                     {getGroupTitle(key)}
@@ -498,8 +641,8 @@ const App: React.FC = () => {
                     onClick={() => handleSummarizeGroup(key, tasks)}
                     disabled={summarizingKey === key}
                     className={`p-1.5 rounded-md transition-all duration-200 flex items-center gap-1.5 text-xs font-medium ${summarizingKey === key
-                        ? 'bg-secondary/10 text-secondary'
-                        : 'text-gray-400 hover:text-secondary hover:bg-secondary/10'
+                      ? 'bg-secondary/10 text-secondary'
+                      : 'text-gray-400 hover:text-secondary hover:bg-secondary/10'
                       }`}
                     title="Summarize these tasks with AI"
                   >

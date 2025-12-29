@@ -3,7 +3,8 @@ export interface Todo {
   text: string;
   completed: boolean;
   createdAt: number;
-  dueDate?: string; // ISO Date string YYYY-MM-DD
+  startDate?: string; // ISO Date string YYYY-MM-DD - when to start the task
+  dueDate?: string; // ISO Date string YYYY-MM-DD - deadline
   isAiGenerated?: boolean;
   isImportant?: boolean;
   description?: string;
