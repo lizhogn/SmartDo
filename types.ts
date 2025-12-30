@@ -4,7 +4,8 @@ export interface Todo {
   completed: boolean;
   createdAt: number;
   startDate?: string; // ISO Date string YYYY-MM-DD - when to start the task
-  dueDate?: string; // ISO Date string YYYY-MM-DD - deadline
+  dueDate?: string; // ISO Date string YYYY-MM-DD - planned execution date
+  deadline?: string; // ISO Date string YYYY-MM-DD - hard deadline (for auto-rollover limit)
   isAiGenerated?: boolean;
   isImportant?: boolean;
   description?: string;

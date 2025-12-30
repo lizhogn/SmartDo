@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Image as ImageIcon, Calendar, CalendarClock } from 'lucide-react';
+import { X, Image as ImageIcon, Calendar, CalendarClock, AlertCircle } from 'lucide-react';
 import { Todo } from '../types';
 
 interface TaskDetailsModalProps {
@@ -14,6 +14,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ todo, isOpen
   const [localImages, setLocalImages] = useState<Record<string, string>>({});
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [deadline, setDeadline] = useState('');
   const editorRef = useRef<HTMLDivElement>(null);
   const lastTodoIdRef = useRef<string | null>(null);
 
@@ -37,7 +38,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ todo, isOpen
     return html;
   };
 
-  // Initialize editor content when todo changes (not on every description change)
+  // Initialize editor content when todo changes
   useEffect(() => {
     if (todo && todo.id !== lastTodoIdRef.current) {
       lastTodoIdRef.current = todo.id;
@@ -45,6 +46,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ todo, isOpen
       setLocalImages(todo.images || {});
       setStartDate(todo.startDate || '');
       setDueDate(todo.dueDate || '');
+      setDeadline(todo.deadline || '');
 
       // Set editor HTML only when switching to a new todo
       if (editorRef.current) {
@@ -69,13 +71,16 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ todo, isOpen
     onUpdate(todo.id, { description, images: localImages });
   };
 
-  const handleDateChange = (type: 'start' | 'due', value: string) => {
+  const handleDateChange = (type: 'start' | 'due' | 'deadline', value: string) => {
     if (type === 'start') {
       setStartDate(value);
       onUpdate(todo.id, { startDate: value || undefined });
-    } else {
+    } else if (type === 'due') {
       setDueDate(value);
       onUpdate(todo.id, { dueDate: value || undefined });
+    } else if (type === 'deadline') {
+      setDeadline(value);
+      onUpdate(todo.id, { deadline: value || undefined });
     }
   };
 
@@ -205,7 +210,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ todo, isOpen
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 font-medium">截止:</span>
+              <span className="text-xs text-gray-500 font-medium">计划:</span>
               <div className="relative flex items-center">
                 <Calendar className="w-4 h-4 text-gray-400 absolute left-2 pointer-events-none" />
                 <input
@@ -213,6 +218,19 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({ todo, isOpen
                   value={dueDate}
                   onChange={(e) => handleDateChange('due', e.target.value)}
                   className="pl-8 pr-2 py-1.5 text-xs border rounded-lg text-gray-600 focus:ring-1 focus:ring-primary focus:border-primary outline-none bg-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-red-500 font-medium">截止:</span>
+              <div className="relative flex items-center">
+                <AlertCircle className="w-4 h-4 text-red-400 absolute left-2 pointer-events-none" />
+                <input
+                  type="date"
+                  value={deadline}
+                  onChange={(e) => handleDateChange('deadline', e.target.value)}
+                  className="pl-8 pr-2 py-1.5 text-xs border border-red-100 rounded-lg text-gray-600 focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none bg-white"
                 />
               </div>
             </div>

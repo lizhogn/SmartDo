@@ -26,48 +26,92 @@ const generateMockTodos = (): Todo[] => {
   const now = Date.now();
 
   return [
+    // Overdue / Past
     {
       id: 'mock-1',
-      text: 'Prepare project documentation',
-      completed: true,
+      text: 'Submit expense report 🧾',
+      completed: false,
       createdAt: now - 172800000,
-      dueDate: getRelativeDate(-1),
-      description: 'Include the following sections:\n- Overview\n- Tech Stack\n- Installation Guide',
+      dueDate: getRelativeDate(-2), // 2 days ago
+      deadline: getRelativeDate(-1), // Deadline was yesterday!
+      isImportant: true,
+      description: 'Monthly office expenses. Receipts attached in email.',
       order: 0,
     },
     {
       id: 'mock-2',
-      text: 'Review pull requests',
-      completed: false,
-      createdAt: now - 3600000,
-      dueDate: getRelativeDate(0),
-      isImportant: true,
+      text: 'Buy groceries 🍎',
+      completed: true,
+      createdAt: now - 86400000,
+      dueDate: getRelativeDate(-1),
       order: 1,
     },
+
+    // Today
     {
       id: 'mock-3',
-      text: 'Design system meeting',
-      completed: false,
-      createdAt: now - 7200000,
+      text: 'Team Standup Meeting 🗣️',
+      completed: true,
+      createdAt: now - 3600000,
       dueDate: getRelativeDate(0),
       order: 2,
     },
     {
       id: 'mock-4',
-      text: 'Optimize database queries',
+      text: 'Finish Q4 Presentation 📊',
       completed: false,
       createdAt: now,
-      dueDate: getRelativeDate(1),
-      isAiGenerated: true,
+      dueDate: getRelativeDate(0),
+      isImportant: true,
+      description: 'Focus on growth metrics and user retention stats. Need to add the new charts from Analytics.',
       order: 3,
     },
     {
       id: 'mock-5',
-      text: 'Plan Q3 roadmap',
+      text: 'Call Mom ❤️',
       completed: false,
-      createdAt: now - 86400000,
-      dueDate: getRelativeDate(7),
+      createdAt: now,
+      dueDate: getRelativeDate(0),
       order: 4,
+    },
+    {
+      id: 'mock-6',
+      text: 'Review PR #1042 👨‍💻',
+      completed: false,
+      createdAt: now,
+      dueDate: getRelativeDate(0),
+      isAiGenerated: true,
+      order: 5,
+    },
+
+    // Tomorrow
+    {
+      id: 'mock-7',
+      text: 'Dentist Appointment 🦷',
+      completed: false,
+      createdAt: now,
+      dueDate: getRelativeDate(1),
+      description: '2:00 PM at Dr. Smith. Bring insurance card.',
+      order: 6,
+    },
+
+    // Next Week
+    {
+      id: 'mock-8',
+      text: 'Car Maintenance 🚗',
+      completed: false,
+      createdAt: now,
+      dueDate: getRelativeDate(5),
+      order: 7,
+    },
+    {
+      id: 'mock-9',
+      text: 'Plan Vacation Itinerary ✈️',
+      completed: false,
+      createdAt: now,
+      dueDate: getRelativeDate(7),
+      description: 'Look for hotels in Kyoto and Tokyo.',
+      order: 8,
     }
   ];
 };
@@ -118,7 +162,34 @@ const App: React.FC = () => {
         await db.init();
         const savedTodos = await db.getAllTodos();
         if (savedTodos.length > 0) {
-          setTodos(savedTodos.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
+          // Auto-Rollover Logic
+          const today = new Date();
+          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+          let rolloverCount = 0;
+          const updatedTodos = savedTodos.map(t => {
+            if (!t.completed && t.dueDate && t.dueDate < todayStr) {
+              // Check if we hit the deadline. 
+              // If no deadline, or today <= deadline, rollover to today.
+              if (!t.deadline || todayStr <= t.deadline) {
+                rolloverCount++;
+                return { ...t, dueDate: todayStr };
+              }
+            }
+            return t;
+          });
+
+          if (rolloverCount > 0) {
+            setError(`${rolloverCount} incomplete task(s) moved to Today.`);
+            setTimeout(() => setError(null), 5000);
+
+            // Save updates to DB
+            updatedTodos.forEach(t => {
+              if (t.dueDate === todayStr) db.saveTodo(t);
+            });
+          }
+
+          setTodos(updatedTodos.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
         } else {
           // Seed mock data if empty
           const mocks = generateMockTodos();
@@ -581,15 +652,15 @@ const App: React.FC = () => {
   return (
     <div className="h-screen w-full bg-slate-50 text-gray-900 flex flex-col overflow-hidden relative">
       {/* Fixed Header */}
-      <div className="shrink-0 px-4 sm:px-6 pt-10 pb-2 z-10 bg-slate-50/95 backdrop-blur-sm border-b border-gray-100/50">
+      <div data-tauri-drag-region className="shrink-0 px-4 sm:px-6 pt-8 pb-2 z-10 bg-slate-50/95 backdrop-blur-sm border-b border-gray-100/50">
         <div className="w-full max-w-2xl mx-auto">
           <div className="flex items-center justify-between mb-6 animate-fade-in">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-gradient-to-br from-primary to-secondary rounded-xl shadow-lg shadow-indigo-200">
-                <CheckCircle2 className="w-8 h-8 text-white" />
+              <div className="p-2 bg-gradient-to-br from-primary to-secondary rounded-lg shadow-md shadow-indigo-200">
+                <CheckCircle2 className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500">
+                <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500">
                   SmartDo
                 </h1>
               </div>
@@ -604,7 +675,7 @@ const App: React.FC = () => {
               title={currentUser ? currentUser.name : "Settings & Login"}
             >
               {currentUser && currentUser.avatar ? (
-                <img src={currentUser.avatar} alt="User" className="w-9 h-9 rounded-full bg-gray-100" />
+                <img src={currentUser.avatar} alt="User" className="w-8 h-8 rounded-full bg-gray-100" />
               ) : (
                 <User className="w-5 h-5" />
               )}
@@ -631,7 +702,7 @@ const App: React.FC = () => {
       {/* Scrollable Task List */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto no-scrollbar scroll-smooth px-4 sm:px-6 pb-32"
+        className="flex-1 overflow-y-auto no-scrollbar scroll-smooth px-4 sm:px-6 pb-[80vh]"
       >
         <div className="w-full max-w-2xl mx-auto pt-2">
           {filteredTodos.length === 0 ? (
@@ -652,7 +723,7 @@ const App: React.FC = () => {
               <div
                 key={key}
                 ref={isScrollAnchor ? todayRef : null}
-                className="mb-6 animate-fade-in"
+                className="mb-4 animate-fade-in"
               >
                 <div
                   className="flex items-center justify-between mb-2 px-1 mt-4 rounded-lg transition-colors"
@@ -714,10 +785,6 @@ const App: React.FC = () => {
               </div>
             ))
           )}
-        </div>
-
-        <div className="mt-12 text-center text-xs text-gray-400">
-          <p>Powered by Google Gemini • React • Tailwind</p>
         </div>
       </div>
 

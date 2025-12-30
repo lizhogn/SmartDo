@@ -166,7 +166,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
       onDragStart={(e) => onDragStart(e, todo.id)}
       onDragOver={onDragOver}
       onDrop={(e) => onDrop(e, todo.id)}
-      className={`group flex items-center justify-between p-4 mb-3 bg-white rounded-xl border transition-all duration-200 animate-slide-up ${todo.completed
+      className={`group flex items-center justify-between p-3 mb-2 bg-white rounded-xl border transition-all duration-200 animate-slide-up ${todo.completed
         ? 'border-gray-100 bg-gray-50/50'
         : todo.isImportant
           ? 'border-amber-200 bg-amber-50/10 shadow-sm'
