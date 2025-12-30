@@ -24,16 +24,14 @@ export const FilterTabs: React.FC<FilterTabsProps> = ({ currentFilter, setFilter
         <button
           key={tab.type}
           onClick={() => setFilter(tab.type)}
-          className={`relative px-2 sm:px-4 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all duration-200 ${
-            currentFilter === tab.type
-              ? 'bg-white text-gray-900 shadow-sm'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
+          className={`relative px-1 sm:px-4 h-8 flex items-center justify-center text-xs sm:text-sm font-medium rounded-md transition-all duration-200 ${currentFilter === tab.type
+            ? 'bg-white text-gray-900 shadow-sm'
+            : 'text-gray-500 hover:text-gray-700'
+            }`}
         >
           {tab.label}
-          <span className={`ml-1.5 sm:ml-2 text-[10px] sm:text-xs py-0.5 px-1.5 rounded-full ${
-             currentFilter === tab.type ? 'bg-gray-100 text-gray-900' : 'bg-gray-200 text-gray-500'
-          }`}>
+          <span className={`ml-1.5 sm:ml-2 text-[10px] sm:text-xs py-0.5 px-1.5 rounded-full ${currentFilter === tab.type ? 'bg-gray-100 text-gray-900' : 'bg-gray-200 text-gray-500'
+            }`}>
             {tab.count}
           </span>
         </button>

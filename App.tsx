@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Todo, FilterType } from './types';
 import { InputBar } from './components/InputBar';
 import { TaskItem } from './components/TaskItem';
@@ -258,6 +258,9 @@ const App: React.FC = () => {
     return `${year}-${month}-${dayOfMonth}`;
   };
 
+
+
+
   const groupedTodos = useMemo(() => {
     // We now enable grouping for ALL filter types
     const groups: Record<string, Todo[]> = {};
@@ -308,23 +311,48 @@ const App: React.FC = () => {
       }
     });
 
-    // Sort future dates ascending (closest first)
+    // Sort all dates ascending (Oldest -> Newest)
+    // This places Past before Today in the DOM, so "scrolling up" (swiping down) reveals them.
     futureKeys.sort((a, b) => a.localeCompare(b));
-    // Sort past dates descending (most recent first, so scrolling up reveals older)
-    pastKeys.sort((a, b) => b.localeCompare(a));
+    pastKeys.sort((a, b) => a.localeCompare(b));
 
-    // Final order: past (reversed for scroll-up) → today → future → no-date
-    // But we want Today at the TOP, so: today → future → past (reversed) → no-date
-    // For scroll-up to reveal past: we put past BEFORE today in DOM but use CSS/scroll to position
-    // Actually simpler: Today first, then future, then past (most recent first), then no-date
-    const sortedKeys = [...todayKeys, ...futureKeys, ...pastKeys, ...noDateKeys];
+    // Order: Past -> Today -> Future -> No Date
+    const sortedKeys = [...pastKeys, ...todayKeys, ...futureKeys, ...noDateKeys];
+
+    // Find the key to scroll to (Today, or first Future, or first No Date, or just first item)
+    // We want to scroll to Today if exists, else first future.
+    let scrollAnchorKey = todayKeys[0];
+    if (!scrollAnchorKey && futureKeys.length > 0) scrollAnchorKey = futureKeys[0];
+    if (!scrollAnchorKey && noDateKeys.length > 0) scrollAnchorKey = noDateKeys[0];
+    // If no future/today, maybe we just stay at top (past). But user wants 'default show today'.
 
     return sortedKeys.map(key => {
       const tasks = groups[key];
       // Tasks are already sorted in filteredTodos, which respects 'order'.
-      return { key, tasks };
+      return { key, tasks, isScrollAnchor: key === scrollAnchorKey };
     });
   }, [filteredTodos, grouping]);
+
+  // Scroll to Today logic
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const todayRef = useRef<HTMLDivElement>(null);
+  const [hasScrolled, setHasScrolled] = useState(false);
+
+  useEffect(() => {
+    // Scroll to today on initial load or when grouping changes
+    if (!hasScrolled && todayRef.current && scrollContainerRef.current) {
+      // Use a small timeout to ensure layout is done
+      setTimeout(() => {
+        todayRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
+        setHasScrolled(true);
+      }, 100);
+    }
+  }, [groupedTodos, hasScrolled]);
+
+  // Reset hasScrolled when grouping changes so we re-snap
+  useEffect(() => {
+    setHasScrolled(false);
+  }, [grouping]);
 
   const getGroupTitle = (key: string) => {
     if (key === 'no-date') return 'No Due Date';
@@ -551,54 +579,61 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background text-gray-900 flex flex-col items-center py-10 px-4 sm:px-6 relative">
+    <div className="h-screen w-full bg-slate-50 text-gray-900 flex flex-col overflow-hidden relative">
+      {/* Fixed Header */}
+      <div className="shrink-0 px-4 sm:px-6 pt-10 pb-2 z-10 bg-slate-50/95 backdrop-blur-sm border-b border-gray-100/50">
+        <div className="w-full max-w-2xl mx-auto">
+          <div className="flex items-center justify-between mb-6 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-gradient-to-br from-primary to-secondary rounded-xl shadow-lg shadow-indigo-200">
+                <CheckCircle2 className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500">
+                  SmartDo
+                </h1>
+              </div>
+            </div>
 
-      <div className="w-full max-w-2xl pb-40">
-        <div className="flex items-center justify-between mb-8 animate-fade-in">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-gradient-to-br from-primary to-secondary rounded-xl shadow-lg shadow-indigo-200">
-              <CheckCircle2 className="w-8 h-8 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
-                SmartDo
-              </h1>
-              <p className="text-gray-500 font-medium">Smart Task Management</p>
-            </div>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className={`rounded-full transition-all duration-200 ${currentUser
+                ? 'p-0.5 border-2 border-primary hover:scale-105'
+                : 'p-2.5 bg-white shadow-sm border border-gray-100 hover:shadow-md hover:bg-gray-50 text-gray-600 hover:text-primary'
+                }`}
+              title={currentUser ? currentUser.name : "Settings & Login"}
+            >
+              {currentUser && currentUser.avatar ? (
+                <img src={currentUser.avatar} alt="User" className="w-9 h-9 rounded-full bg-gray-100" />
+              ) : (
+                <User className="w-5 h-5" />
+              )}
+            </button>
           </div>
 
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className={`rounded-full transition-all duration-200 ${currentUser
-              ? 'p-0.5 border-2 border-primary hover:scale-105'
-              : 'p-2.5 bg-white shadow-sm border border-gray-100 hover:shadow-md hover:bg-gray-50 text-gray-600 hover:text-primary'
-              }`}
-            title={currentUser ? currentUser.name : "Settings & Login"}
-          >
-            {currentUser && currentUser.avatar ? (
-              <img src={currentUser.avatar} alt="User" className="w-9 h-9 rounded-full bg-gray-100" />
-            ) : (
-              <User className="w-5 h-5" />
-            )}
-          </button>
+          {todos.length > 0 && (
+            <div className="flex flex-row flex-nowrap items-center justify-between gap-1 overflow-x-auto no-scrollbar animate-fade-in" style={{ animationDelay: '0.2s' }}>
+              <FilterTabs
+                currentFilter={filter}
+                setFilter={setFilter}
+                counts={counts}
+              />
+
+              <GroupingTabs
+                currentGrouping={grouping}
+                setGrouping={setGrouping}
+              />
+            </div>
+          )}
         </div>
+      </div>
 
-        {todos.length > 0 && (
-          <div className="flex flex-row flex-wrap items-end justify-between gap-2 mb-6 animate-fade-in" style={{ animationDelay: '0.2s' }}>
-            <FilterTabs
-              currentFilter={filter}
-              setFilter={setFilter}
-              counts={counts}
-            />
-
-            <GroupingTabs
-              currentGrouping={grouping}
-              setGrouping={setGrouping}
-            />
-          </div>
-        )}
-
-        <div className="space-y-1">
+      {/* Scrollable Task List */}
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto no-scrollbar scroll-smooth px-4 sm:px-6 pb-32"
+      >
+        <div className="w-full max-w-2xl mx-auto pt-2">
           {filteredTodos.length === 0 ? (
             <div className="text-center py-20 text-gray-400 animate-fade-in">
               {filter === FilterType.ALL && todos.length === 0 ? (
@@ -613,8 +648,12 @@ const App: React.FC = () => {
               )}
             </div>
           ) : (
-            groupedTodos.map(({ key, tasks }) => (
-              <div key={key} className="mb-6 animate-fade-in">
+            groupedTodos.map(({ key, tasks, isScrollAnchor }) => (
+              <div
+                key={key}
+                ref={isScrollAnchor ? todayRef : null}
+                className="mb-6 animate-fade-in"
+              >
                 <div
                   className="flex items-center justify-between mb-2 px-1 mt-4 rounded-lg transition-colors"
                   onDragOver={(e) => {

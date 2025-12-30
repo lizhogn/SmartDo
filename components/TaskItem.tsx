@@ -174,7 +174,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
         } ${isDragging ? 'opacity-50 border-dashed border-gray-300' : ''}`}
     >
       <div className="flex items-center gap-2 flex-1 min-w-0">
-        <div className="cursor-grab active:cursor-grabbing p-1 text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="hidden md:block cursor-grab active:cursor-grabbing p-1 text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
           <GripVertical className="w-4 h-4" />
         </div>
 
