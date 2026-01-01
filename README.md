@@ -5,12 +5,12 @@
   
   ### 🧠 AI-Powered Smart Task Manager
   
-  *一款使用 Gemini AI 驱动的智能待办事项应用，帮助你将复杂目标拆解为可执行的任务。*
+  *一款支持多种 AI 模型的智能待办事项应用，帮助你将复杂目标拆解为可执行的任务。*
 
   [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-FFC131?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app)
   [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactjs.org)
   [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-  [![Gemini AI](https://img.shields.io/badge/Gemini-AI-8E75B2?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
+  [![Multi AI](https://img.shields.io/badge/AI-Gemini%20%7C%20OpenAI%20%7C%20DeepSeek-8E75B2?style=for-the-badge&logo=openai&logoColor=white)](https://ai.google.dev)
 
   <br/>
   
@@ -92,6 +92,44 @@
 </tr>
 </table>
 
+### 🔧 自定义 API 配置
+
+SmartDo 支持多种 AI 模型提供商，让你自由选择最适合的 AI 服务：
+
+<table>
+<tr>
+<td width="50%">
+
+#### 🌐 支持的 API 提供商
+
+| 提供商 | 状态 | 说明 |
+|:------|:----:|:-----|
+| **Google Gemini** | ✅ | 默认推荐，免费额度充足 |
+| **OpenAI** | ✅ | GPT-3.5 / GPT-4 系列 |
+| **DeepSeek** | ✅ | 高性价比国产模型 |
+| **其他兼容 API** | ✅ | 支持 OpenAI 格式的任意服务 |
+| **Anthropic Claude** | 🔜 | 即将支持 |
+
+</td>
+<td width="50%">
+
+#### ⚙️ 配置方式
+
+在设置面板中轻松配置：
+
+1. 选择 **API Provider**（提供商）
+2. 输入你的 **API Key**
+3. （可选）自定义 **Base URL** 和 **Model Name**
+4. 点击 **Test Connection** 验证配置
+
+> 💡 **DeepSeek 示例**：
+> - Base URL: `https://api.deepseek.com`
+> - Model: `deepseek-chat`
+
+</td>
+</tr>
+</table>
+
 ---
 
 ## 🎨 界面预览
@@ -100,13 +138,7 @@
 
 <div align="center">
 
-| 功能区域 | 说明 |
-|:------:|:-----|
-| 🏷️ **顶部导航** | 品牌标识 + 用户头像 |
-| 🔍 **筛选标签** | All / Active / Completed |
-| 📆 **分组选择** | Day / Week / Month / Year |
-| 📋 **任务列表** | 按日期分组的任务卡片 |
-| ✏️ **输入框** | 支持 AI 智能拆解的任务输入 |
+![interface](assets/main.png)
 
 </div>
 
