@@ -414,7 +414,13 @@ const App: React.FC = () => {
     if (!hasScrolled && todayRef.current && scrollContainerRef.current) {
       // Use a small timeout to ensure layout is done
       setTimeout(() => {
-        todayRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
+        // Use direct scrollTop instead of scrollIntoView to prevent ancestor scrolling
+        if (todayRef.current && scrollContainerRef.current) {
+          const containerRect = scrollContainerRef.current.getBoundingClientRect();
+          const todayRect = todayRef.current.getBoundingClientRect();
+          const scrollOffset = todayRect.top - containerRect.top + scrollContainerRef.current.scrollTop;
+          scrollContainerRef.current.scrollTop = scrollOffset;
+        }
         setHasScrolled(true);
       }, 100);
     }
