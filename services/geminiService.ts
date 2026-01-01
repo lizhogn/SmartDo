@@ -15,6 +15,53 @@ const hasApiKey = () => {
   return !!(localStorage.getItem('gemini_api_key') || process.env.API_KEY);
 };
 
+// Default prompts
+const DEFAULT_TASK_PROMPT = `You are an expert project manager. Break down the following user goal into 3 to 5 concrete, actionable, short todo list items. Goal: "{{goal}}"`;
+
+const DEFAULT_SUMMARY_PROMPT = `你是一个专业的工作报告撰写助手。
+
+请根据以下时间段的任务生成工作报告: "{{groupName}}"
+
+任务列表:
+{{taskList}}
+
+{{detailLevel}}，请使用中文输出，按以下格式生成专业的工作报告:
+
+## � 工作概览
+- 本期任务总数、已完成数量、完成率
+- 重要任务完成情况
+
+## ✅ 完成事项
+- 按优先级或类别列出已完成的主要工作
+- 简述完成情况和成果
+
+## 🔄 进行中 / 待办事项
+- 列出未完成的任务及当前进度
+- 说明预计完成时间或阻塞原因
+
+## 📈 工作亮点
+- 突出本期的重要成果和亮点
+- 值得分享的经验或改进
+
+## � 下期计划
+- 根据待办任务提出下期工作重点
+- 需要关注或跟进的事项
+
+## 💬 备注
+- 其他需要说明的事项（如有）`;
+
+// Get custom prompts from localStorage
+export const getTaskPrompt = (): string => {
+  return localStorage.getItem('custom_task_prompt') || DEFAULT_TASK_PROMPT;
+};
+
+export const getSummaryPrompt = (): string => {
+  return localStorage.getItem('custom_summary_prompt') || DEFAULT_SUMMARY_PROMPT;
+};
+
+export const getDefaultTaskPrompt = (): string => DEFAULT_TASK_PROMPT;
+export const getDefaultSummaryPrompt = (): string => DEFAULT_SUMMARY_PROMPT;
+
 export const testApiConfiguration = async (
   provider: string,
   apiKey: string,
@@ -27,11 +74,11 @@ export const testApiConfiguration = async (
     const url = baseUrl || 'https://api.openai.com/v1';
     const model = modelName || 'gpt-3.5-turbo';
 
-    const response = await fetch(`${url.replace(/\/+$/, '')}/chat/completions`, {
+    const response = await fetch(`${url.replace(/\/+$/, '')} /chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${apiKey} `
       },
       body: JSON.stringify({
         model: model,
@@ -47,9 +94,9 @@ export const testApiConfiguration = async (
       const errText = await response.text();
       try {
         const errObj = JSON.parse(errText);
-        throw new Error(errObj.error?.message || `Status ${response.status}`);
+        throw new Error(errObj.error?.message || `Status ${response.status} `);
       } catch (e) {
-        throw new Error(`Status ${response.status}: ${errText}`);
+        throw new Error(`Status ${response.status}: ${errText} `);
       }
     }
   } else {
@@ -66,11 +113,11 @@ const callOpenAI = async (userDetails: string) => {
   const baseUrl = localStorage.getItem('openai_base_url') || 'https://api.openai.com/v1';
   const model = localStorage.getItem('openai_model_name') || 'gpt-3.5-turbo';
 
-  const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+  const response = await fetch(`${baseUrl.replace(/\/+$/, '')} /chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
+      'Authorization': `Bearer ${apiKey} `
     },
     body: JSON.stringify({
       model: model,
@@ -83,7 +130,7 @@ const callOpenAI = async (userDetails: string) => {
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI API Error: ${response.statusText}`);
+    throw new Error(`OpenAI API Error: ${response.statusText} `);
   }
 
   const data = await response.json();
@@ -108,9 +155,12 @@ export const generateSubtasks = async (goal: string): Promise<string[]> => {
 
   const provider = localStorage.getItem('api_provider');
 
+  // Get custom prompt and replace placeholder
+  const customPrompt = getTaskPrompt().replace(/\{\{goal\}\}/g, goal);
+
   try {
     if (provider === 'openai') {
-      const prompt = `Break down the following user goal into 3 to 5 concrete, actionable, short todo list items. Goal: "${goal}". Return JSON { "tasks": string[] }`;
+      const prompt = customPrompt + ' Return JSON { "tasks": string[] }';
       const data = await callOpenAI(prompt);
       return data.tasks || [];
     }
@@ -121,7 +171,7 @@ export const generateSubtasks = async (goal: string): Promise<string[]> => {
 
     const response = await ai.models.generateContent({
       model: modelId,
-      contents: `You are an expert project manager. Break down the following user goal into 3 to 5 concrete, actionable, short todo list items. Goal: "${goal}"`,
+      contents: customPrompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -204,26 +254,11 @@ export const summarizeGroupTasks = async (
       ? "请根据任务内容和备注进行详细分析"
       : "请根据任务列表进行宏观总结";
 
-    const prompt = `你是一个高效的个人助理。
-
-请对以下时间段的任务进行总结: "${groupName}"
-
-任务列表:
-${taskList}
-
-${detailLevel}，请使用中文输出，按以下格式输出要点:
-
-## 📊 完成情况
-- 总任务数和完成率
-
-## 🎯 重点事项
-- 列出重要任务或即将到期的任务
-
-## 💡 建议
-- 针对待办任务给出简短建议
-
-## ✨ 总结
-- 一句话鼓励性总结`;
+    // Get custom prompt and replace placeholders
+    const prompt = getSummaryPrompt()
+      .replace(/\{\{groupName\}\}/g, groupName)
+      .replace(/\{\{taskList\}\}/g, taskList)
+      .replace(/\{\{detailLevel\}\}/g, detailLevel);
 
     // Check provider
     const provider = localStorage.getItem('api_provider');
